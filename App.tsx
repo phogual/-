@@ -5,9 +5,9 @@ import { ChatInterface } from './components/ChatInterface';
 import { PreMeetingView } from './components/PreMeetingView';
 import { PersonaSettings } from './components/PersonaSettings';
 import { analyzeSalesFile, analyzeSalesText } from './services/geminiService';
-import { AnalysisResult, AppStatus, UserPersona } from './types';
+import { AnalysisResult, AppStatus, UserPersona, FeedbackMode } from './types';
 
-// --- [구글 시트 기반 권한 체크 컴포넌트] ---
+// --- [1. 구글 시트 기반 권한 체크 컴포넌트] ---
 function AuthGate({ children }: { children: React.ReactNode }) {
   const [email, setEmail] = useState<string | null>(localStorage.getItem('userEmail'));
   const [authorizedUsers, setAuthorizedUsers] = useState<Record<string, string>>({});
@@ -32,7 +32,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         setAuthorizedUsers(data);
         setIsLoading(false);
       } catch (error) {
-        console.error("권한 목록 로드 실패:", error);
+        console.error("Auth Load Failed:", error);
         setIsLoading(false);
       }
     };
@@ -52,7 +52,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (isLoading) return (
     <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: '#020617', color: '#6366f1', fontFamily: 'sans-serif' }}>
-      권한 확인 중...
+      보안 서버 연결 중...
     </div>
   );
 
@@ -73,6 +73,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   );
 }
 
+// --- [2. 메인 앱 컴포넌트] ---
 type MainTab = 'PRE_MEETING' | 'SALES_ANALYSIS' | 'AI_COACH';
 
 const ANALYSIS_STEPS = [
@@ -97,13 +98,18 @@ function App() {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [persona, setPersona] = useState<UserPersona>({ name: '', background: '', goal: '', isActive: false });
   const [isPersonaModalOpen, setIsPersonaModalOpen] = useState(false);
+  const [feedbackMode, setFeedbackMode] = useState<FeedbackMode>('softened');
   const [lastAction, setLastAction] = useState<(() => Promise<AnalysisResult>) | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('sales_persona_v2');
     if (saved) { try { setPersona(JSON.parse(saved)); } catch (e) { console.error(e); } }
+    const savedMode = localStorage.getItem('feedback_mode');
+    if (savedMode) { setFeedbackMode(savedMode as FeedbackMode); }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [mainTab, status]);
+
+  useEffect(() => { localStorage.setItem('feedback_mode', feedbackMode); }, [feedbackMode]);
 
   useEffect(() => {
     let interval: any;
@@ -140,7 +146,7 @@ function App() {
       const isQuota = msg.includes("429") || msg.toLowerCase().includes("quota");
       const is503 = msg.includes("503") || msg.toLowerCase().includes("high demand");
       setIsServerBusy(isQuota || is503);
-      setErrorMsg(isQuota ? "API 할당량 초과" : (is503 ? "서버 혼잡" : (err.message || '오류 발생')));
+      setErrorMsg(isQuota ? "API 이용 할당량 초과" : (is503 ? "서버 혼잡" : (err.message || '오류 발생')));
       setStatus(AppStatus.ERROR);
     }
   };
@@ -160,6 +166,13 @@ function App() {
               <span className="text-[7px] sm:text-[10px] font-bold text-slate-500 tracking-[0.2em] mt-0.5 sm:mt-1 uppercase">Professional AI Edition V2.2</span>
              </div>
           </div>
+
+          <div className="flex items-center gap-4">
+              <div className="hidden sm:flex items-center bg-slate-900/80 rounded-full p-1 border border-white/5 shadow-inner">
+                  <button onClick={() => setFeedbackMode('softened')} className={`px-4 py-1.5 rounded-full text-[10px] font-black transition-all ${feedbackMode === 'softened' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Soft Advice</button>
+                  <button onClick={() => setFeedbackMode('merciless')} className={`px-4 py-1.5 rounded-full text-[10px] font-black transition-all ${feedbackMode === 'merciless' ? 'bg-rose-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Hard-hitting Advice</button>
+              </div>
+          </div>
         </header>
 
         <main className="max-w-7xl mx-auto px-4 py-8 relative">
@@ -170,14 +183,14 @@ function App() {
                       <nav className="flex p-1 bg-slate-900/50 rounded-2xl border border-white/5 shadow-xl w-full max-w-lg overflow-x-auto no-scrollbar">
                           {[
                               { id: 'PRE_MEETING', label: '미팅 전략' },
-                              { id: 'SALES_ANALYSIS', label: '정밀 진단' },
+                              { id: 'SALES_ANALYSIS', label: '세일즈 진단' },
                               { id: 'AI_COACH', label: 'AI 코치' }
                           ].map((tab) => (
                               <button key={tab.id} onClick={() => setMainTab(tab.id as MainTab)} className={`flex-1 py-2.5 sm:py-3 px-2 rounded-xl text-[10px] sm:text-xs font-black transition-all whitespace-nowrap ${mainTab === tab.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:bg-white/5'}`}>{tab.label}</button>
                           ))}
                       </nav>
 
-                      {/* --- 페르소나 버튼 (이미지 1번 스타일 복구 완료) --- */}
+                      {/* --- [핵심] 페르소나 버튼 디자인 복구 지점 --- */}
                       <div className="lg:absolute lg:right-0 flex flex-col items-center">
                           <button onClick={() => setIsPersonaModalOpen(true)} className="group relative flex flex-col items-center transition-all duration-500 hover:scale-110 active:scale-95">
                               <div className="absolute inset-0 bg-purple-600/30 blur-[25px] rounded-full scale-110 opacity-60 group-hover:opacity-100 transition-opacity"></div>
@@ -201,17 +214,17 @@ function App() {
                   </div>
 
                   <div className="w-full max-w-4xl">
-                    {mainTab === 'PRE_MEETING' && <PreMeetingView persona={persona} />}
-                    {mainTab === 'SALES_ANALYSIS' && <FileUpload onFileSelect={(f) => processAnalysis(() => analyzeSalesFile(f, persona, addLog))} onScriptSelect={(s) => processAnalysis(() => analyzeSalesText(s, persona, addLog))} disabled={false} />}
-                    {mainTab === 'AI_COACH' && <ChatInterface persona={persona} />}
+                    {mainTab === 'PRE_MEETING' && <PreMeetingView persona={persona} mode={feedbackMode} />}
+                    {mainTab === 'SALES_ANALYSIS' && <FileUpload onFileSelect={(f) => processAnalysis(() => analyzeSalesFile(f, persona, feedbackMode, addLog))} onScriptSelect={(s) => processAnalysis(() => analyzeSalesText(s, persona, feedbackMode, addLog))} disabled={false} />}
+                    {mainTab === 'AI_COACH' && <ChatInterface persona={persona} mode={feedbackMode} />}
                   </div>
               </div>
             </div>
           )}
 
-          {status === AppStatus.ANALYZING && <div className="py-20 text-center">분석 엔진 가동 중... ({elapsedTime}초)</div>}
-          {status === AppStatus.SUCCESS && result && <AnalysisView result={result} onReset={() => setStatus(AppStatus.IDLE)} />}
-          {status === AppStatus.ERROR && <div className="py-20 text-center"><h2 className="text-white mb-6 font-black uppercase tracking-tight">분석에 실패했습니다</h2><div className="bg-slate-900/60 p-6 rounded-2xl border border-white/5 mb-10"><p className="text-slate-300 text-sm">{errorMsg}</p></div><button onClick={handleRetry} className="w-full py-4 bg-indigo-600 rounded-xl font-black">다시 시도</button></div>}
+          {status === AppStatus.ANALYZING && <div className="py-20 text-center">분석 중... ({elapsedTime}초)</div>}
+          {status === AppStatus.SUCCESS && result && <AnalysisView result={result} onReset={() => setStatus(AppStatus.IDLE)} mode={feedbackMode} />}
+          {status === AppStatus.ERROR && <div className="py-20 text-center"><h2 className="text-white mb-4">{errorMsg}</h2><button onClick={handleRetry} className="px-6 py-2 bg-indigo-600 rounded-lg">다시 시도</button></div>}
         </main>
 
         <PersonaSettings isOpen={isPersonaModalOpen} onClose={() => setIsPersonaModalOpen(false)} onSave={handleSavePersona} initialData={persona} />
